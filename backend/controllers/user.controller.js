@@ -2,6 +2,9 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { File } from "../models/file.model.js";
+import fs from "fs";
+import path from "path";
 import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshToken = async(userId) => {
@@ -194,6 +197,81 @@ const getUserProfile = asyncHandler(async (req, res) => {
     },"User profile fetched successfully"))
 })
 
+const uploadFile = asyncHandler(async (req, res) => {
+    const userId = req.user._id
+    const { file } = req
+
+    if (!file) {
+        throw new ApiError(400, "File is required")
+    }
+
+    const newFile = await File.create({
+        filename: file.filename,
+        originalname: file.originalname,
+        size: file.size,
+        mimetype: file.mimetype,
+        userId: userId
+    })
+
+    return res.status(201).json(new ApiResponse(201, newFile, "File uploaded successfully"))
+})
+const getFile = asyncHandler(async (req, res) => {
+    const { fileId } = req.params
+
+    const file = await File.findById(fileId)
+    if (!file) {
+        throw new ApiError(404, "File not found")
+    }
+    return res.status(200).json(new ApiResponse(200, file, "File fetched successfully"))
+})
+
+const downloadFile = asyncHandler(async (req, res) => {
+    const { fileId } = req.params
+
+    const file = await File.findById(fileId)
+    if (!file) {
+        throw new ApiError(404, "File not found")
+    }
+    const filePath = path.join(process.cwd(), "uploads", file.filename)
+    if (!fs.existsSync(filePath)) {
+        throw new ApiError(404, "File not found on server")
+    }
+    res.download(filePath, file.originalname, (err) => {
+        if (err) {
+            console.error("Error downloading file:", err)
+            throw new ApiError(500, "Error downloading file")
+        }
+    })
+})
+
+const deleteFile = asyncHandler(async (req, res) => {
+    const { fileId } = req.params
+
+    const file = await File.findById(fileId)
+    if (!file) {
+        throw new ApiError(404, "File not found")
+    }
+    const filePath = path.join(process.cwd(), "uploads", file.filename)
+    if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath)
+    }
+    await File.findByIdAndDelete(fileId)
+
+    return res.status(200).json(new ApiResponse(200, null, "File deleted successfully"))
+})
+
+const getAllFiles = asyncHandler(async (req, res) => {
+    const userId = req.user._id
+
+    const files = await File.find({ userId })
+    if (!files) {
+        throw new ApiError(404, "No files found")
+    }
+
+    return res.status(200).json(new ApiResponse(200, files, "Files fetched successfully"))
+})
+
+
 export {
     register,
     login,
@@ -201,5 +279,10 @@ export {
     refreshAccessToken,
     updateProfile,
     updatePassword,
-    getUserProfile
+    getUserProfile,
+    uploadFile,
+    getFile,
+    downloadFile,
+    deleteFile,
+    getAllFiles
 }
