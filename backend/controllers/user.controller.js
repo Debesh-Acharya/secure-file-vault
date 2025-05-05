@@ -33,35 +33,62 @@ const generateAccessAndRefreshToken = async(userId) => {
 
 
 const register = asyncHandler(async (req, res) => {
-    const { username, email, password } = req.body
-
-    if ([email,username,password].some((field)=>field.trim()==="")) {
-        throw new ApiError(400,"All fields are required")
-       }//validation
-
-    const userExists = await User.findOne({ email })
-    if (userExists) {
-        throw new ApiError(400, "User already exists")
+    const { username, email, password } = req.body;
+  
+    if ([email, username, password].some((field) => field.trim() === "")) {
+      throw new ApiError(400, "All fields are required");
     }
-
-    const newUser = await User.create({
-        username:username.trim().toLowerCase(),
-        email: email.trim().toLowerCase(),
-        password
-    })
-    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(newUser._id)
-
-    const ApiResponseData = new ApiResponse(201, {
+  
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedUsername = username.trim().toLowerCase();
+  
+    // Check if email or username already exists
+    const existingUser = await User.findOne({
+      $or: [{ email: trimmedEmail }, { username: trimmedUsername }],
+    });
+  
+    if (existingUser) {
+      if (existingUser.email === trimmedEmail) {
+        throw new ApiError(400, "Email is already registered");
+      } else if (existingUser.username === trimmedUsername) {
+        throw new ApiError(400, "Username is already taken");
+      }
+    }
+  
+    let newUser;
+    try {
+      newUser = await User.create({
+        username: trimmedUsername,
+        email: trimmedEmail,
+        password,
+      });
+    } catch (error) {
+      // Handles duplicate key error from MongoDB
+      if (error.code === 11000) {
+        throw new ApiError(400, "Username or email already exists");
+      }
+      throw error; // rethrow other errors
+    }
+  
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(newUser._id);
+  
+    const ApiResponseData = new ApiResponse(
+      201,
+      {
         user: {
-            _id: newUser._id,
-            username: newUser.username,
-            email: newUser.email,
+          _id: newUser._id,
+          username: newUser.username,
+          email: newUser.email,
         },
         accessToken,
-        refreshToken
-    },"User created successfully")
-    return res.status(201).json(ApiResponseData)
-})
+        refreshToken,
+      },
+      "User created successfully"
+    );
+  
+    return res.status(201).json(ApiResponseData);
+  });
+  
 
 const login = asyncHandler(async (req, res) => {
     const { email, password } = req.body
